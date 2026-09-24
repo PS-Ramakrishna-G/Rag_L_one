@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HR Policy Chat</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <main class="chat-panel">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Knowledge base</p>
+            <h1>HR Policy Assistant</h1>
+          </div>
+        </header>
+
+        <section id="chat-window" class="chat-window">
+          <div class="message bot">
+            <div class="avatar">AI</div>
+            <div class="bubble">
+              Hello! Ask about leave, recruitment, benefits, performance, or policy compliance.
+            </div>
+          </div>
+        </section>
+
+        <form id="chat-form" class="chat-form">
+          <textarea id="question" rows="1" placeholder="Ask about the HR policy manual..."></textarea>
+          <button type="submit">Send</button>
+        </form>
+      </main>
+
+      <aside class="debug-panel">
+        <div class="debug-header">
+          <p class="eyebrow">Retrieval proof</p>
+          <h2>Debug panel</h2>
+        </div>
+
+        <div class="panel-section">
+          <h3>Retrieval info</h3>
+          <div id="retrieval-info" class="proof-box">
+            <p class="muted">Awaiting retrieval...</p>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <h3>Retrieved chunks</h3>
+          <div id="sources" class="source-list"></div>
+        </div>
+
+        <div class="panel-section">
+          <h3>Logs</h3>
+          <pre id="logs" class="logs-box">No logs yet.</pre>
+        </div>
+      </aside>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>

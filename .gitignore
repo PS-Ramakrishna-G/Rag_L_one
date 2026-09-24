@@ -1,0 +1,28 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Dataset / PDFs
+Dataset/
+
+# OS
+.DS_Store
+Thumbs.db

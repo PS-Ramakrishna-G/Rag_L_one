@@ -1,0 +1,11 @@
+PyMuPDF
+pdfplumber
+ollama
+pinecone
+openai
+sentence-transformers
+tiktoken
+rank-bm25
+pydantic
+python-dotenv
+tenacity
