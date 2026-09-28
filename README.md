@@ -1,35 +1,35 @@
-# HR Policy RAG Assistant
+# HR Policy Manual RAG Project
 
-This project builds a retrieval-augmented generation (RAG) system for an HR policy manual. It ingests policy content, stores chunked text in SQLite and Pinecone, retrieves relevant passages, and answers policy questions using a local Qwen model via Ollama.
+This project builds a retrieval-augmented generation (RAG) workflow for the HR Policy Manual PDF in `Dataset/HR Policy Manual 2023.pdf`.
 
-## Project overview
+The system is designed to:
+- extract policy text from the PDF
+- clean cover pages,headers, and TOC noise
+- split long sections into token-aware parent/child chunks
+- store chunk metadata in SQLite
+- optionally upsert vectors to Pinecone
+- retrieve relevant policy passages for a user question
+- answer using a grounded HR-only prompt
+- show evidence and debug output in a frontend chat UI
 
-We use a document ingestion pipeline to extract HR policy text from PDFs and convert it into clean, structured chunks.
-Chunking is done to break long policy text into smaller passages so retrieval stays precise and the model gets focused context.
-We store each chunk with metadata like page number, section, and parent title so evidence can be shown in the UI.
-For embeddings, we use sentence-transformers with all-MiniLM-L6-v2 to convert text into vectors for semantic search.
-For vector storage, we use Pinecone because it supports fast similarity search over large document collections.
-For local fallback and proof, we also save chunk metadata into SQLite so the system still works when Pinecone is unavailable.
-Retrieval uses the user question embedding, finds the closest policy chunks, and passes only those chunks into the LLM prompt.
-The LLM layer uses Ollama and the local Qwen model to answer grounded questions without external API dependence.
-The system prompt enforces strict policy-only behavior, so the model must answer from the retrieved policy text and not invent facts.
-This entire flow is kept in one RAG pattern because it is a clean, explainable pipeline: ingest → chunk → embed → retrieve → answer → show evidence.
-Why we use one file for the main logic
-We use one central retrieval file, retrieval_service.py, because it keeps the orchestration simple and easy to trace:
+---
 
-question embedding
-retrieval
-prompt construction
-answer generation
-source proof formatting
-This makes debugging easier, reduces duplication, and keeps the app easier to demo and explain. The frontend then just calls one API endpoint, and the backend handles the whole RAG logic in one place.
+## High-level approach
 
-The system has four main layers:
+The app follows a local, explainable RAG flow:
 
-1. Document ingestion and chunking
-2. Vector storage in Pinecone
-3. Retrieval and answer generation
-4. Frontend demo UI
+1. PDF ingestion
+2. text cleaning and section parsing
+3. parent/child chunking with token limits
+4. SQLite persistence and JSON artifact export
+5. optional Pinecone vector upsert
+6. question embedding and semantic retrieval
+7. Qwen answer generation with HR-only guardrails
+8. UI display with evidence and source proof
+
+This is built for policy/manual documents where correctness and traceability matter more than raw generation.
+
+---
 
 ## Repository structure
 
@@ -38,89 +38,165 @@ Rag_L_one/
 ├── app.py
 ├── requirements.txt
 ├── README.md
+├── .env
+├── Dataset/
+│   └── HR Policy Manual 2023.pdf
 ├── artifacts/
-│   └── rag_evaluation.json
+│   ├── hr_policy_chunks.json
+│   └── rag_evaluation_results.json
 ├── back_end/
 │   ├── ingestion/
+│   │   ├── hr_policy_pipeline.py
+│   │   └── validate_chunks.py
 │   └── retival/
+│       ├── retrieval_service.py
+│       ├── rag_evaluation.py
+│       └── test_retrieval.py
 ├── front_end/
 │   ├── static/
+│   │   ├── app.js
+│   │   └── style.css
 │   └── templates/
+│       └── index.html
 ├── llm_engine/
 │   └── ollama_client.py
-├── storage/
-├── pinecone/
 ├── logs/
-├── Dataset/
-├── Docuent_intelegence_engine/
-└── .env
+├── pinecone/
+│   └── connection_check.py
+├── storage/
+│   └── hr_policy_chunks.db
+└── Docuent_intelegence_engine/
+    ├── __init__.py
+    ├── document_analyzer.py
+    └── strategy_registry.py
 ```
 
-## Main components
+---
 
-### 1) Ingestion pipeline
-Responsible for extracting document content from policy PDFs, splitting into chunks, and storing metadata.
+## Core design decisions
 
-Key files:
-- `back_end/ingestion/`
-- `Docuent_intelegence_engine/document_analyzer.py`
-- `Docuent_intelegence_engine/strategy_registry.py`
+### 1) Ingestion is PDF-first
+The ingestion pipeline reads the HR manual PDF and extracts page text with PyMuPDF.
+It removes noisy content such as:
+- cover page text
+- document headers/footers
+- isolated page numbers
+- TOC pages
+- very short non-policy fragments
 
-This layer prepares the document so it can be searched semantically.
+The goal is to keep only meaningful HR policy content before chunking.
 
-### 2) Retrieval service
-Responsible for:
-- embedding the user question
-- querying Pinecone for semantic matches
-- falling back to SQLite when needed
-- building a grounded prompt for the LLM
+### 2) Parent/child chunking is token-aware
+The chunking logic preserves section boundaries and then splits larger sections into smaller child chunks using token limits.
 
-Key file:
-- `back_end/retival/retrieval_service.py`
+Current target values:
+- child target: 250 tokens
+- child max: 320 tokens
+- overlap: 30 tokens
 
-### 3) LLM engine
-Connects to a local Ollama instance and calls the Qwen model.
+This keeps each chunk compact enough for embedding while preserving its policy meaning.
 
-Key file:
-- `llm_engine/ollama_client.py`
+### 3) SQLite is the local source of truth
+Every chunk is stored with metadata like:
+- `parent_title`
+- `section_title`
+- `page_number`
+- `token_count`
+- `child_text`
 
-### 4) Frontend app
-Provides a ChatGPT-style interface showing the answer and retrieval proof.
+This makes debugging, proof generation, and fallback retrieval easy.
 
-Key files:
-- `app.py`
-- `front_end/templates/index.html`
-- `front_end/static/app.js`
-- `front_end/static/style.css`
+### 4) Pinecone is optional but supported
+If Pinecone credentials are configured, vectors are upserted in batches to stay below the request-size limit.
+If Pinecone is not configured, the app still works using the SQLite evidence path and local retrieval logic.
 
-## Environment setup
+### 5) Qwen is the local answer model
+The answer generation layer uses Ollama with the local Qwen model configured in the app.
 
-1. Create and activate a virtual environment.
-2. Install dependencies from `requirements.txt`.
-3. Make sure Ollama is running locally.
-4. Set your environment variables in `.env`.
+The local model used here is:
+- `qwen2.5-coder:1.5b`
 
-Example `.env` values:
+### 6) Guardrails are strict
+The answer prompt is written to ensure the model answers only from the policy context and does not invent policy facts.
 
-```env
-PINECONE_API_KEY=your_key
-PINECONE_INDEX_NAME=your_index
-PINECONE_NAMESPACE=hr-policy
-PINECONE_HOST=your_host
-DEFAULT_OLLAMA_HOST=http://localhost:11434
-DEFAULT_QWEN_MODEL=qwen2.5-coder:1.5b
-```
+The model should only answer if:
+- the question is HR-policy related
+- the retrieved context supports the answer
+- the answer is grounded in the provided policy text
 
-## Install dependencies
+---
+
+## Local workflow
+
+### Install dependencies
 
 ```powershell
 cd C:\projects\Rag_L_one
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
+### Pull the Ollama model
+
+```powershell
+ollama pull qwen2.5-coder:1.5b
+```
+
+### Ingest the policy PDF
+
+```powershell
+cd C:\projects\Rag_L_one
+.\.venv\Scripts\python.exe back_end\ingestion\hr_policy_pipeline.py --pdf ".\Dataset\HR Policy Manual 2023.pdf"
+```
+
+### Validate chunk quality
+
+```powershell
+cd C:\projects\Rag_L_one
+.\.venv\Scripts\python.exe back_end\ingestion\validate_chunks.py
+```
+
+This script checks:
+- total chunk count
+- token range and averages
+- empty and tiny chunks
+- oversized chunks
+- token mismatch warnings
+- presence of key HR-policy terms like maternity, paternity, office hours, recruitment, grievance
+
+---
+
+## Retrieval and answer flow
+
+### Retrieval service
+The main logic lives in:
+- `back_end/retival/retrieval_service.py`
+
+It does the following:
+- embeds the user question
+- searches Pinecone if credentials are available
+- falls back to SQLite if Pinecone is missing
+- builds a grounded prompt
+- returns answer + sources + retrieval debug output
+
+### Retrieval smoke tests
+
+```powershell
+cd C:\projects\Rag_L_one
+.\.venv\Scripts\python.exe -c "import sys; sys.path.insert(0, '.'); from back_end.retival.retrieval_service import answer_question; print(answer_question('How many days of maternity leave are allowed?', top_k=5))"
+```
+
+You can also test the vector lookup script:
+
+```powershell
+cd C:\projects\Rag_L_one
+.\.venv\Scripts\python.exe back_end\retival\test_retrieval.py
+```
+
+---
+
 ## Run the app
 
-From the project root:
+The app auto-checks for the policy data and runs ingestion automatically if the chunk database or artifact is missing.
 
 ```powershell
 cd C:\projects\Rag_L_one
@@ -130,61 +206,72 @@ cd C:\projects\Rag_L_one
 Then open:
 
 ```text
-http://localhost:5000
+http://127.0.0.1:5000
 ```
 
-## Run the evaluation
+The UI shows:
+- chat question and answer
+- retrieved evidence cards
+- retrieval metadata
+- debug logs
 
-The evaluation script tests the RAG system on a known set of policy questions.
+---
 
-Run from the project root:
+## Evaluation
+
+The evaluation script checks question-answer quality against a set of known policy facts.
+
+Run:
 
 ```powershell
-cd C:\projects\Rag_L_one
-.\.venv\Scripts\python.exe -m back_end.retival.rag_evaluation
+cd C:\projects\Rag_L_one\back_end\retival
+python .\rag_evaluation.py
 ```
 
-This writes results to:
+Output is written to:
 
 ```text
-artifacts/rag_evaluation.json
+artifacts/rag_evaluation_results.json
 ```
 
-## How the RAG pipeline works
+---
 
-1. A user asks a question in the frontend.
-2. Flask receives the request in `app.py`.
-3. `answer_question()` in `retrieval_service.py` is called.
-4. The question is embedded using `all-MiniLM-L6-v2`.
-5. Pinecone is searched for similar policy chunks.
-6. If Pinecone is unavailable, SQLite is used as a fallback.
-7. The retrieved chunks are inserted into a grounded prompt.
-8. Qwen is asked to answer using only the provided policy evidence.
-9. The answer and source metadata are returned to the frontend.
+## Important project principle
 
-## Evaluation purpose
+This workflow is built to do the following in the correct order:
 
-The evaluation script measures whether the system can answer known policy questions with evidence from the document. It is useful for checking:
+1. fix PDF extraction quality
+2. fix chunk quality
+3. validate chunk token sizes and content
+4. ensure retrieval returns real evidence
+5. only then ask the model to answer
 
-- retrieval quality
-- answer faithfulness
-- grounding to the policy text
-- system reliability before demos
+If the chunk or evidence quality is poor, the model cannot recover with a good prompt. The system is intentionally structured to keep retrieval grounded and explainable.
+
+---
+
+## Current status
+
+The project is currently operating as a working HR policy RAG prototype with:
+- local PDF ingestion
+- token-aware chunking
+- SQLite persistence
+- optional Pinecone batch upsert
+- retrieval service with fallback logic
+- local Ollama Qwen integration
+- Flask chat API and frontend UI
+
+---
 
 ## Notes
 
-- The local LLM is served through Ollama.
-- The vector database is Pinecone.
-- SQLite acts as a fallback and a local evidence store.
-- The answer generation is constrained by a system prompt to keep replies grounded to the HR policy content.
+- App startup runs ingestion automatically when the policy artifact is missing.
+- Pinecone is optional, but the app is designed to use it when configured.
+- The answer layer is constrained to stay within the HR policy knowledge base.
+- Evidence pages and source chunks are surfaced in the UI to make the answer explainable.
 
-## Recommended next steps
-
-- Improve the evaluation metrics with exact match / answer similarity scoring
-- Add stronger citation formatting in responses
-- Expand the policy dataset coverage
-- Add UI improvements for proof visibility and source browsing
+---
 
 ## License
 
-This project is for internal demo and research use unless otherwise specified by the owner.
+This project is intended for internal demo and research purposes unless otherwise specified by the owning organization.

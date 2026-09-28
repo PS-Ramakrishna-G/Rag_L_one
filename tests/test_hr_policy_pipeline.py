@@ -5,6 +5,7 @@ from back_end.ingestion.hr_policy_pipeline import (
     build_parent_child_chunks,
     build_pinecone_records,
 )
+from back_end.retival.retrieval_service import _should_refuse_authority_question
 
 
 class HRPolicyPipelineTests(unittest.TestCase):
@@ -52,6 +53,48 @@ class HRPolicyPipelineTests(unittest.TestCase):
         self.assertIn("metadata", vectors[0])
         self.assertEqual(vectors[0]["metadata"]["page_number"], 12)
         self.assertEqual(len(vectors[0]["values"]), 512)
+
+    def test_logical_parent_child_metadata_for_sections(self):
+        sections = [
+            {
+                "chapter": "Leave and Attendance",
+                "section": "5.1 Casual Leave",
+                "title": "CHAPTER 6 - LEAVE AND ATTENDANCE",
+                "content": "Casual leave is admissible for 8 days in a calendar year. Employees may apply in advance.\n\nThe leave is credited at the start of the year.",
+                "page_number": 69,
+            }
+        ]
+
+        chunks = build_parent_child_chunks(sections, child_token_target=20, parent_token_target=80)
+        self.assertTrue(chunks)
+        self.assertIn("parent_id", chunks[0])
+        self.assertIn("document_id", chunks[0])
+        self.assertEqual(chunks[0]["chapter"], "Leave and Attendance")
+        self.assertEqual(chunks[0]["section"], "5.1 Casual Leave")
+        self.assertEqual(chunks[0]["page_start"], 69)
+        self.assertEqual(chunks[0]["page_end"], 69)
+
+    def test_refuse_vague_authority_question_without_explicit_policy_evidence(self):
+        question = "if i sick leave whome i need to ask"
+        matches = [
+            {
+                "metadata": {
+                    "child_text": "The leave policy covers annual leave, maternity leave, and sick leave benefits."
+                }
+            }
+        ]
+        self.assertTrue(_should_refuse_authority_question(question, matches))
+
+    def test_accept_explicit_authority_instruction_when_policy_names_the_contact(self):
+        question = "if i sick leave whome i need to ask"
+        matches = [
+            {
+                "metadata": {
+                    "child_text": "Employees should contact the Director for sick leave approval and follow up with the reporting officer."
+                }
+            }
+        ]
+        self.assertFalse(_should_refuse_authority_question(question, matches))
 
 
 if __name__ == "__main__":
